@@ -1,0 +1,24 @@
+youtrack:
+  board: "Professional Core App"
+  project: "WBMDMOB"
+  sprint_calculation: "bi-weekly-odd"  # 2-week sprints aligned to odd ISO weeks
+
+#llm:
+#  # Current provider: Google Gemini (free tier - 20 requests/day limit)
+#  # TODO: Switch to athena after migration
+#  provider: "google"
+#  model: "gemini/gemini-2.5-flash"
+
+llm:
+  provider: "athena"
+  base_url: "https://athena.webmdhelios.com/v1"
+  model: "saas-openai-gpt-4.1"
+
+ports:
+  mitm_proxy: 8080
+  mitm_web: 8081
+  streamlit: 8501
+
+paths:
+  capture_dir: "captured_squash_data"
+  addon_script: "squash_capture.py"

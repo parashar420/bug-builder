@@ -1,0 +1,174 @@
+generate_bug_report:
+  description: >
+    Parse the provided bug description: {bug_description}
+    The input may be structured Gherkin test data OR free-form natural language 
+    bug description. Adapt extraction accordingly — Gherkin parsing rules MUST 
+    apply only when Gherkin keywords are present.
+    
+    EXTRACTION INSTRUCTIONS:
+    The bug description includes a "BUILD & DEVICE INFO" section containing
+    build version and device information. This info may be formatted in various ways
+    by different testers. Extract intelligently by looking for:
+    
+    BUILD PATTERNS:
+    - "Build: <version>" or "Build : <version>"
+    - "build <version>" (case insensitive)
+    - Version numbers like "12.35.0", "Medscape-iOS-12.35.0-12935937", "Medscape iOS 12.36.2"
+    
+    DEVICE PATTERNS:
+    - "Device: <name>" or "Device : <name>"
+    - Device names: "iPhone 16", "Galaxy A32", "Pixel 7 Pro", etc.
+    - May include OS version: "iPhone 16 OS 18.3.1", "Galaxy A32 Android 13"
+    
+    OS PATTERNS:
+    - "OS: <version>", "OS <version>"
+    - "iOS 18.3.1", "Android 13", etc.
+    - May be embedded with device name
+    
+    If BUILD & DEVICE INFO section says "not provided" or is missing information,
+    use "Not specified" for those specific fields and continue generating the report.
+    
+    Extract all other technical details including app/platform, environmental conditions,
+    prerequisite steps, failed step, and actual result from the bug description.
+    
+    CRITICAL QUALITY RULES:
+
+        1. PRECONDITION-TO-STEPS ALIGNMENT:
+           - If preconditions mention a screen/state, the FIRST step must show
+             how to reach it from app launch or login if it is exclusively mentioned do not fabricate information
+           - Never leave navigation gaps
+           - Example: If precondition is "user on home screen", don't start 
+             steps with "Play podcast" - add "Navigate to a Podcast" first
+
+        2. ACTUAL RESULT CONCISENESS:
+           - Summarize in 1-2 sentences maximum
+           - Focus on WHAT failed, not every missing UI element
+           - Use format: "[Primary failure]; [Secondary observable issue]"
+           - Example: "Podcast pauses; minimized player shows no content"
+           - NOT: Bullet list of every missing element
+
+        3. EXPECTED RESULT CONCISENESS:
+           - Single sentence that states the intended behavior
+           - Only mention key elements, not exhaustive UI lists
+           - Example: "Podcast continues playing with thumbnail, title, and 
+             controls visible in minimized player"
+           - NOT: "Episode thumbnail, Episode title, Play/pause control, 
+             X icon, Progress bar"
+
+        4. REPRODUCIBILITY EXTRACTION:
+           - Look for patterns like "intermittent", "consistent", "sometimes",
+             "always", "only when", "every time"
+           - If found, add as a NOTE after Expected Result
+           - Format: "Note: [Reproducibility context]"
+           - Example: "Note: Consistent with downloaded podcasts, intermittent
+             with streaming"
+
+        5. INLINE STEP GUIDANCE:
+           - If certain conditions make reproduction easier, add them inline
+             in parentheses within the relevant step
+           - Example: "Play a podcast (preferably downloaded for consistent 
+             reproduction)"
+           - NOT as separate precondition
+
+        6. GHERKIN PARSING RULES:
+           - "Given" statements → Preconditions OR initial steps
+           - "When" statement → The key action step
+           - "Then" statements → Extract INTENT, not every "And" clause
+           - Combine multiple "And the minimized player displays..." into ONE
+             concise expected result
+           - Ignore obvious expectations like "app does not crash"
+
+        7. STEPS NUMBERING:
+           - Combine related actions into single steps where logical
+           - Each step = one user action or verification point
+    
+    Generate a professional bug report using this exact format:
+    
+    **Title:** [App] [Platform] | [Component/Area] | [Behavior/Issue]
+    **Tested On:**  
+    * Build: [extracted build version or "Not specified"]
+    * Device: [extracted device name and OS or "Not specified"]
+
+    ---
+
+    **Preconditions:**  
+    * [Only essential app state/environment setup]
+    * [User login state if relevant]
+    * [Do NOT include screen navigation - that goes in Steps]
+
+    ---
+
+    **Steps to Reproduce:**  
+    * [Include ALL navigation from precondition state]
+    * [Each step is a single, clear action]
+    * [Add inline guidance in parentheses where helpful]
+    * [Use clear action verbs in present tense]
+    * [Do not repeate the points as steps that are mentioned in Precondition]
+
+    ---
+
+    **Actual Result:**  
+    * [1-2 sentence summary: Primary failure; Secondary observable issue]
+
+    ---
+
+    **Expected Result:**  
+    * [Single sentence describing intended behavior with key elements only]
+    * [Infer from test scenario context and failed step description]
+    * [What should have happened based on the test expectations]
+
+    CRITICAL FORMATTING RULES:
+    - Use exactly "---" as section separators
+    - Include blank lines before and after each "---"
+    - Use bold headers with colon: "**Section Name:**"
+    - Leave blank line after each header before content
+    - Use bullet points (*) for lists in Tested On, Preconditions, Results
+    - Use bullet points (*) for Steps to Reproduce
+    - Present tense for all steps and descriptions
+    
+    Never include introductory text or explanations - output must be
+    directly copy-pasteable. Do NOT ask for missing information - instead
+    use "Not specified" for missing build/device fields and generate the
+    complete report with all available information.
+
+  expected_output: >
+    A complete, professionally formatted bug report with "---" separators
+    between each section, proper spacing, bold section headers,
+    and clear technical details with concise actual/expected results (1-2 sentences each). 
+    No additional commentary or explanations.
+    Build and device information extracted from BUILD & DEVICE INFO section,
+    with "Not specified" used for any missing fields. Maximum readability in 
+    minimum words.
+
+  agent: bug_report_specialist
+
+generate_youtrack_url:
+  description: >
+    Take the structured bug report from the previous task and convert it into a YouTrack issue creation URL.
+    
+    Follow these steps:
+    1. Extract the title from the "**Title:**" section of the bug report
+    2. Extract everything else as the description content
+    3. Apply URL encoding rules:
+       - Spaces become + compulsorily
+       - Line breaks become %0A
+       - Special characters get URL encoded (| becomes %7C, : becomes %3A, etc.)
+       - Keep markdown formatting intact
+    
+    Build the URL using this template structure:
+    https://youtrack.internetbrands.com/newIssue?project=WBMDMOB&summary=[ENCODED_TITLE]&description=[ENCODED_DESCRIPTION]&c=add+Board+{board}+{board_sprint}&c=Type+Project+Bug&c=Subsystems+{board}&c=Environment%28s%29+Mobile+App&c=Lifecycle+Preview
+    
+    Where:
+    - [ENCODED_TITLE] = URL-encoded title from the bug report
+    - [ENCODED_DESCRIPTION] = URL-encoded description content  
+    - {board_sprint} = the board_sprint value from inputs (e.g., "2025.05")
+    - {board} = the board value from inputs (e.g., "Professional Core App")
+    
+    Output only the complete URL, nothing else.
+
+  expected_output: >
+    A complete YouTrack issue creation URL that when clicked will open
+    YouTrack with all fields pre-filled. The URL should be properly encoded
+    and ready for immediate use.
+  agent: youtrack_url_generator
+

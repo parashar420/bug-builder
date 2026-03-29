@@ -1,0 +1,43 @@
+# ─── Security — NEVER commit these ───────────────────────────────────────────
+#.env
+#athena_token.txt
+
+# ─── Virtual Environment ──────────────────────────────────────────────────────
+venv/
+
+# ─── Runtime Data ─────────────────────────────────────────────────────────────
+captured_squash_data/
+
+# ─── AI Output Files ──────────────────────────────────────────────────────────
+bug_report*.md
+youtrack_url*.txt
+all_youtrack_urls*.txt
+
+# ─── Python Cache ─────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ─── Package Build Artifacts ──────────────────────────────────────────────────
+*.egg-info/
+dist/
+build/
+*.spec
+
+# ─── macOS Junk ───────────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ─── IDE Files ────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ─── uv lock file (machine specific) ─────────────────────────────────────────
+uv.lock
+
+# ─── Knowledge / User Preferences (personal) ─────────────────────────────────
+knowledge/

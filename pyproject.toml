@@ -1,0 +1,31 @@
+[project]
+name = "bug_builder"
+version = "0.1.0"
+description = "bug_builder using crewAI"
+authors = [{ name = "Parashar Parab", email = "parashar.parab@internetbrands.com" }]
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "crewai[openai,tools]==1.9.3",
+    "mitmproxy>=10.0.0",
+    "streamlit>=1.55.0",
+    "pyyaml>=6.0.0",
+]
+
+[project.scripts]
+bug_builder = "bug_builder.main:run"
+run_crew = "bug_builder.main:run"
+train = "bug_builder.main:train"
+replay = "bug_builder.main:replay"
+test = "bug_builder.main:test"
+run_with_trigger = "bug_builder.main:run_with_trigger"
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["bug_builder"]
+
+[tool.crewai]
+type = "crew"

@@ -1,0 +1,3 @@
+ADD_YOUR_ATHENA_API_KEY_HERE
+RENAME FILE TO - athena_token.txt  (Remove .example)
+delete all this text only API key should be present in this file
