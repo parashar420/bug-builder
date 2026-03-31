@@ -28,15 +28,26 @@ if 'nl_processing_result' not in st.session_state:
     st.session_state.nl_processing_result = None
 
 
-def get_board_sprint():
-    """Generate current sprint info"""
+def get_board_sprint(board_name=None):
+    """Generate sprint string using correct prefix for selected board"""
     current_week = datetime.now().isocalendar()[1]
     if current_week % 2 == 0:
         sprint_number = current_week - 1
     else:
         sprint_number = current_week
     current_year = datetime.now().year
-    return f"{config['youtrack']['board']} - Sprint {current_year}.{sprint_number:02d}"
+
+    # Find sprint prefix for selected board
+    boards = config['youtrack']['boards']
+    selected_name = board_name or config['youtrack']['default_board']
+
+    sprint_prefix = selected_name  # fallback
+    for board in boards:
+        if board['name'] == selected_name:
+            sprint_prefix = board['sprint_prefix']
+            break
+
+    return f"{sprint_prefix} - Sprint {current_year}.{sprint_number:02d}"
 
 
 def clean_html(html_text):
@@ -175,6 +186,33 @@ def check_for_new_mitm_file():
 st.title("🐛 Bug Builder - Squash TM Processor")
 st.markdown("Process Squash TM execution data via MITM proxy or describe a bug in your own words")
 
+board_names = [b['name'] for b in config['youtrack']['boards']]
+col_board, _, _, _, _ = st.columns(5)
+with col_board:
+    selected_board = st.selectbox(
+        "🎯 Select YouTrack Board",
+        options=board_names,
+        index=0,
+        help="Select the YouTrack board to create tickets on"
+    )
+
+st.markdown("""
+    <style>
+    [data-baseweb="select"] input,
+    [data-baseweb="select"] input:hover,
+    [data-baseweb="select"] input:focus,
+    [data-baseweb="select"] *,
+    [data-baseweb="select"] *:hover,
+    div[class*="ValueContainer"] *,
+    div[class*="ValueContainer"] input {
+        cursor: pointer !important;
+        caret-color: transparent !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+st.divider()
+
 # Input Sources Section
 st.header("📥 Input Sources")
 
@@ -219,7 +257,7 @@ with col2:
     bug_input = st.text_area(
         label="Describe the bug in your own words",
         placeholder=(
-            "Example: I was testing Medscape iOS build 12.35.0 on iPhone 16 OS 18.3.1. "
+            "Example: Build: Medscape iOS v12.35.0 Device: iPhone 16 OS 18.3.1."
             "I tapped the minimize button on the podcast player and the app crashed immediately. "
             "Expected the player to minimize to the bottom bar."
         ),
@@ -263,8 +301,8 @@ See description above.
 """
                     inputs = {
                         'bug_description': bug_description.strip(),
-                        'board_sprint': get_board_sprint(),
-                        'board': config['youtrack']['board'],
+                        'board_sprint': get_board_sprint(selected_board),
+                        'board': selected_board,
                         'current_year': str(datetime.now().year)
                     }
 
@@ -363,8 +401,8 @@ if st.session_state.analysis_results:
 
                     inputs = {
                         'bug_description': bug_description,
-                        'board_sprint': get_board_sprint(),
-                        'board': config['youtrack']['board'],
+                        'board_sprint': get_board_sprint(selected_board),
+                        'board': selected_board,
                         'current_year': str(datetime.now().year)
                     }
 
