@@ -1,6 +1,6 @@
 # ─── Security — NEVER commit these ───────────────────────────────────────────
-#.env
-#athena_token.txt
+.env
+athena_token.txt
 
 # ─── Virtual Environment ──────────────────────────────────────────────────────
 venv/

@@ -9,7 +9,6 @@ import time
 import webbrowser
 from datetime import datetime
 from dotenv import load_dotenv
-
 from bug_builder import app_config as config
 #from src.bug_builder.crew import BugBuilder
 from bug_builder.crew import BugBuilder
@@ -22,7 +21,7 @@ warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
 # Replace with inputs you want to test with, it will automatically
 # interpolate any tasks and agents information
 
-board = config["youtrack"]["board"]
+board = config["youtrack"]["default_board"]
 
 
 def clean_html(html_text):
@@ -48,10 +47,26 @@ def get_current_sprint():
     return f"{sprint_number:02d}"
 
 
-def get_board_sprint():
+def get_board_sprint(board_name=None):
+    """Generate sprint string using correct prefix for selected board"""
+    current_week = datetime.now().isocalendar()[1]
+    if current_week % 2 == 0:
+        sprint_number = current_week - 1
+    else:
+        sprint_number = current_week
     current_year = datetime.now().year
-    sprint = get_current_sprint()
-    return f"{board} - Sprint {current_year}.{sprint}"
+
+    # Find sprint prefix for selected board
+    boards = config['youtrack']['boards']
+    selected_name = board_name or config['youtrack']['default_board']
+
+    sprint_prefix = selected_name  # fallback
+    for board in boards:
+        if board['name'] == selected_name:
+            sprint_prefix = board['sprint_prefix']
+            break
+
+    return f"{sprint_prefix} - Sprint {current_year}.{sprint_number:02d}"
 
 
 # === SQUASH TM PROCESSING FUNCTIONS ===

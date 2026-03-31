@@ -1,13 +1,18 @@
 youtrack:
-  board: "Professional Core App"
+  default_board: "Professional Core App"
   project: "WBMDMOB"
-  sprint_calculation: "bi-weekly-odd"  # 2-week sprints aligned to odd ISO weeks
-
-#llm:
-#  # Current provider: Google Gemini (free tier - 20 requests/day limit)
-#  # TODO: Switch to athena after migration
-#  provider: "google"
-#  model: "gemini/gemini-2.5-flash"
+  sprint_calculation: "bi-weekly-odd"
+  boards:
+    - name: "Professional Core App"
+      sprint_prefix: "Professional Core App"
+    - name: "Scan - Professional App"
+      sprint_prefix: "Prof Scan App"
+    - name: "Read - Professional App"
+      sprint_prefix: "Prof Read App"
+    - name: "Point of Care - Professional App"
+      sprint_prefix: "Prof PoC App"
+    - name: "Professional Commercial App"
+      sprint_prefix: "Prof Comm App"
 
 llm:
   provider: "athena"
