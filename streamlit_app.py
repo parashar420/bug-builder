@@ -1,11 +1,16 @@
+import os
+os.environ["OTEL_SDK_DISABLED"] = "true"
+os.environ["CREWAI_TELEMETRY_OPT_OUT"] = "true"
 import streamlit as st
 import json
-import os
 import re
 import time
+import traceback
 from datetime import datetime
-from bug_builder import app_config as config
+from bug_builder import app_config, athena_token
+config = app_config
 from src.bug_builder.crew import BugBuilder
+from urllib.parse import quote_plus
 
 st.set_page_config(
     page_title="Bug Builder - Squash TM Processor",
@@ -26,28 +31,35 @@ if 'last_checked_file' not in st.session_state:
     st.session_state.last_checked_file = None
 if 'nl_processing_result' not in st.session_state:
     st.session_state.nl_processing_result = None
+if 'last_error' not in st.session_state:
+    st.session_state.last_error = None
 
 
-def get_board_sprint(board_name=None):
-    """Generate sprint string using correct prefix for selected board"""
-    current_week = datetime.now().isocalendar()[1]
-    if current_week % 2 == 0:
-        sprint_number = current_week - 1
+def get_board_sprint(project, board_name, sequential_sprint=None):
+    """Generate sprint string for selected project and board"""
+    sprint_format = project['sprint_format']
+
+    if sprint_format == 'sequential':
+        # MEDAIS style — Sprint 30
+        sprint_prefix = next(
+            (b['sprint_prefix'] for b in project['boards'] if b['name'] == board_name),
+            board_name
+        )
+        return f"{sprint_prefix} Sprint {sequential_sprint}"
+
     else:
-        sprint_number = current_week
-    current_year = datetime.now().year
-
-    # Find sprint prefix for selected board
-    boards = config['youtrack']['boards']
-    selected_name = board_name or config['youtrack']['default_board']
-
-    sprint_prefix = selected_name  # fallback
-    for board in boards:
-        if board['name'] == selected_name:
-            sprint_prefix = board['sprint_prefix']
-            break
-
-    return f"{sprint_prefix} - Sprint {current_year}.{sprint_number:02d}"
+        # WBMDMOB style — year.week
+        current_week = datetime.now().isocalendar()[1]
+        if current_week % 2 == 0:
+            sprint_number = current_week - 1
+        else:
+            sprint_number = current_week
+        current_year = datetime.now().year
+        sprint_prefix = next(
+            (b['sprint_prefix'] for b in project['boards'] if b['name'] == board_name),
+            board_name
+        )
+        return f"{sprint_prefix} - Sprint {current_year}.{sprint_number:02d}"
 
 
 def clean_html(html_text):
@@ -186,25 +198,52 @@ def check_for_new_mitm_file():
 st.title("🐛 Bug Builder - Squash TM Processor")
 st.markdown("Process Squash TM execution data via MITM proxy or describe a bug in your own words")
 
-board_names = [b['name'] for b in config['youtrack']['boards']]
-col_board, _, _, _, _ = st.columns(5)
-with col_board:
-    selected_board = st.selectbox(
-        "🎯 Select YouTrack Board",
-        options=board_names,
+col_project, col_board, _, _, _ = st.columns(5)
+
+# Build project list from config
+projects = config['youtrack']['projects']
+project_names = [p['display_name'] for p in projects]
+
+with col_project:
+    selected_project_display = st.selectbox(
+        "📁 Select Project",
+        options=project_names,
         index=0,
-        help="Select the YouTrack board to create tickets on"
     )
 
+# Find selected project object
+selected_project = next(
+    p for p in projects if p['display_name'] == selected_project_display
+)
+
+# Filter boards for selected project
+board_names = [b['name'] for b in selected_project['boards']]
+
+with col_board:
+    selected_board = st.selectbox(
+        "🎯 Select Board",
+        options=board_names,
+        index=0,
+    )
+
+# Sprint input — only shown for sequential sprint projects
+selected_sprint = None
+if selected_project['sprint_format'] == 'sequential':
+    col_sprint, _, _, _, _ = st.columns(5)
+    with col_sprint:
+        selected_sprint = st.text_input(
+            "🔢 Sprint Number",
+            placeholder="e.g. 20"
+        )
+
+# CSS for pointer cursor on all dropdowns
 st.markdown("""
     <style>
     [data-baseweb="select"] input,
     [data-baseweb="select"] input:hover,
     [data-baseweb="select"] input:focus,
     [data-baseweb="select"] *,
-    [data-baseweb="select"] *:hover,
-    div[class*="ValueContainer"] *,
-    div[class*="ValueContainer"] input {
+    [data-baseweb="select"] *:hover {
         cursor: pointer !important;
         caret-color: transparent !important;
     }
@@ -299,11 +338,17 @@ FAILED SCENARIO:
 ACTUAL RESULT:
 See description above.
 """
+
                     inputs = {
-                        'bug_description': bug_description.strip(),
-                        'board_sprint': get_board_sprint(selected_board),
+                        'bug_description': bug_description,
+                        'board_sprint': get_board_sprint(selected_project, selected_board, selected_sprint),
                         'board': selected_board,
-                        'current_year': str(datetime.now().year)
+                        'url_template': selected_project['url_template'],
+                        'current_year': str(datetime.now().year),
+                        # Pre-encoded versions for URL template
+                        'board_encoded': quote_plus(selected_board),
+                        'board_sprint_encoded': quote_plus(
+                            get_board_sprint(selected_project, selected_board, selected_sprint)),
                     }
 
                     BugBuilder().crew().kickoff(inputs=inputs)
@@ -388,12 +433,15 @@ if st.session_state.analysis_results:
     with col1:
         if results['failed_tests']:
             if st.button("🚀 Create YouTrack Links", type="primary", use_container_width=True):
+                print("✅ BUTTON CLICKED")
+                print(f"✅ Failed tests count: {len(results['failed_tests'])}")
                 st.session_state.processing_results = []
 
                 progress_bar = st.progress(0)
                 status_text = st.empty()
 
                 for i, failed_test in enumerate(results['failed_tests']):
+                    print(f"✅ LOOP ITERATION {i}")
                     status_text.text(f"Processing step {i + 1}/{len(results['failed_tests'])}...")
                     progress_bar.progress((i + 1) / len(results['failed_tests']))
 
@@ -401,9 +449,13 @@ if st.session_state.analysis_results:
 
                     inputs = {
                         'bug_description': bug_description,
-                        'board_sprint': get_board_sprint(selected_board),
+                        'board_sprint': get_board_sprint(selected_project, selected_board, selected_sprint),
                         'board': selected_board,
-                        'current_year': str(datetime.now().year)
+                        'url_template': selected_project['url_template'],
+                        'current_year': str(datetime.now().year),
+                        'board_encoded': quote_plus(selected_board),
+                        'board_sprint_encoded': quote_plus(
+                            get_board_sprint(selected_project, selected_board, selected_sprint)),
                     }
 
                     try:
@@ -431,20 +483,35 @@ if st.session_state.analysis_results:
                             'status': 'completed'
                         })
 
+
                     except Exception as e:
+
+                        import traceback
+
+                        st.session_state.last_error = traceback.format_exc()
+
                         st.session_state.processing_results.append({
+
                             'step': i + 1,
+
                             'order': failed_test['order'],
+
                             'bug_description': bug_description,
+
                             'youtrack_url': "Error occurred",
+
                             'status': 'error',
+
                             'error': str(e)
+
                         })
 
                 status_text.text("✅ All bug reports generated!")
                 progress_bar.empty()
                 status_text.empty()
-                st.rerun()
+                if st.session_state.last_error:
+                    st.error(f"❌ Error details:\n{st.session_state.last_error}")
+                #st.rerun()
         else:
             st.info("✅ No failed tests to process!")
 

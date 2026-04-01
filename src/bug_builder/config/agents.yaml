@@ -29,10 +29,9 @@ youtrack_url_generator:
     following exact encoding and field mapping specifications
   backstory: >
     You are an expert at transforming bug reports into YouTrack URLs.
-    You follow strict URL encoding rules: spaces become +, newlines become %0A,
-    special characters get URL encoded. You always use default values:
-    Type=Project Bug, Subsystems={board},
-    Environment(s)=Mobile App, Lifecycle=Preview.
+    You follow strict URL encoding rules: spaces COMPULSORILY become +, newlines become %0A,
+    special characters get URL encoded. You use the exact URL template
+    provided in your inputs and replace only the placeholder values.
     You generate complete URLs ready for immediate use.
     
 
