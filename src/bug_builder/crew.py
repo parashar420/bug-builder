@@ -4,7 +4,8 @@ from crewai import Agent, Crew, Process, Task, LLM
 from crewai.project import CrewBase, agent, crew, task
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from typing import List
-from bug_builder import app_config as config, athena_token
+from bug_builder import app_config, athena_token
+config = app_config
 
 load_dotenv()
 

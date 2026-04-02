@@ -9,9 +9,11 @@ import time
 import webbrowser
 from datetime import datetime
 from dotenv import load_dotenv
-from bug_builder import app_config as config
+from bug_builder import app_config, athena_token
+config = app_config
 #from src.bug_builder.crew import BugBuilder
 from bug_builder.crew import BugBuilder
+from urllib.parse import quote_plus
 
 load_dotenv()
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
@@ -21,7 +23,6 @@ warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
 # Replace with inputs you want to test with, it will automatically
 # interpolate any tasks and agents information
 
-board = config["youtrack"]["default_board"]
 
 
 def clean_html(html_text):
@@ -47,26 +48,31 @@ def get_current_sprint():
     return f"{sprint_number:02d}"
 
 
-def get_board_sprint(board_name=None):
-    """Generate sprint string using correct prefix for selected board"""
-    current_week = datetime.now().isocalendar()[1]
-    if current_week % 2 == 0:
-        sprint_number = current_week - 1
+def get_board_sprint(project, board_name, sequential_sprint=None):
+    """Generate sprint string for selected project and board"""
+    sprint_format = project['sprint_format']
+
+    if sprint_format == 'sequential':
+        # MEDAIS style — Sprint 30
+        sprint_prefix = next(
+            (b['sprint_prefix'] for b in project['boards'] if b['name'] == board_name),
+            board_name
+        )
+        return f"{sprint_prefix} Sprint {sequential_sprint}"
+
     else:
-        sprint_number = current_week
-    current_year = datetime.now().year
-
-    # Find sprint prefix for selected board
-    boards = config['youtrack']['boards']
-    selected_name = board_name or config['youtrack']['default_board']
-
-    sprint_prefix = selected_name  # fallback
-    for board in boards:
-        if board['name'] == selected_name:
-            sprint_prefix = board['sprint_prefix']
-            break
-
-    return f"{sprint_prefix} - Sprint {current_year}.{sprint_number:02d}"
+        # WBMDMOB style — year.week
+        current_week = datetime.now().isocalendar()[1]
+        if current_week % 2 == 0:
+            sprint_number = current_week - 1
+        else:
+            sprint_number = current_week
+        current_year = datetime.now().year
+        sprint_prefix = next(
+            (b['sprint_prefix'] for b in project['boards'] if b['name'] == board_name),
+            board_name
+        )
+        return f"{sprint_prefix} - Sprint {current_year}.{sprint_number:02d}"
 
 
 # === SQUASH TM PROCESSING FUNCTIONS ===
@@ -454,6 +460,33 @@ def process_squash():
     with open(latest_file, 'r') as f:
         json_data = json.load(f)
 
+    # === RESOLVE PROJECT AND BOARD FROM CONFIG (CLI uses defaults) ===
+    projects = config['youtrack']['projects']
+    default_project_name = config['youtrack']['default_project']
+
+    # Find default project object
+    selected_project = next(
+        (p for p in projects if p['name'] == default_project_name),
+        projects[0]  # fallback to first project if default not found
+    )
+
+    # Use first board of default project
+    selected_board = selected_project['boards'][0]['name']
+
+    # Handle sequential sprint format
+    selected_sprint = None
+    if selected_project['sprint_format'] == 'sequential':
+        print(f"⚠️  Project '{selected_project['display_name']}' uses sequential sprints.")
+        try:
+            selected_sprint = int(input("🔢 Enter current sprint number: ").strip())
+        except (ValueError, EOFError):
+            print("❌ Invalid sprint number. Using 1 as default.")
+            selected_sprint = 1
+
+    print(f"📋 Using Project: {selected_project['display_name']}")
+    print(f"📋 Using Board: {selected_board}")
+    print(f"📋 Using Sprint: {get_board_sprint(selected_project, selected_board, selected_sprint)}")
+
     # === FOR UI DISPLAY ===
     failed_tests = extract_failed_tests(json_data)
 
@@ -481,10 +514,14 @@ def process_squash():
 
         # Prepare CrewAI inputs
         inputs = {
-            'bug_description': bug_description,  # ← Now has FULL context
-            'board_sprint': get_board_sprint(),
-            'board': board,
-            'current_year': str(datetime.now().year)
+            'bug_description': bug_description,
+            'board_sprint': get_board_sprint(selected_project, selected_board, selected_sprint),
+            'board': selected_board,
+            'url_template': selected_project['url_template'],
+            'current_year': str(datetime.now().year),
+            # Pre-encoded versions for URL template
+            'board_encoded': quote_plus(selected_board),
+            'board_sprint_encoded': quote_plus(get_board_sprint(selected_project, selected_board, selected_sprint)),
         }
 
         print(f"🚀 SENDING TO CREWAI:")
@@ -504,10 +541,11 @@ def process_squash():
         execution_id = json_data['id']
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
-        os.rename('bug_report.md',
-                  f'bug_report_{execution_id}_step_{i + 1}_{timestamp}.md')
+        if os.path.exists('bug_report.md'):
+            os.rename('bug_report.md',
+                      f'bug_report_{execution_id}_step_{i + 1}_{timestamp}.md')
 
-        # Read YouTrack URL and use scenario name from UI function
+        # Read YouTrack URL
         if os.path.exists('youtrack_url.txt'):
             with open('youtrack_url.txt', 'r') as f:
                 url = f.read().strip()
@@ -515,18 +553,20 @@ def process_squash():
                     'step': i + 1,
                     'title': f"Step {failed_test['order']} Failure",
                     'url': url,
-                    'scenario_name': extract_scenario_name(failed_test['action'])  # ← UI function
+                    'scenario_name': extract_scenario_name(failed_test['action'])
                 })
             os.rename('youtrack_url.txt',
                       f'youtrack_url_{execution_id}_step_{i + 1}_{timestamp}.txt')
 
-    # Create consolidated URLs file (same as before)
+    # Create consolidated URLs file
     execution_id = json_data['id']
     urls_file = f'all_youtrack_urls_{execution_id}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.txt'
 
     with open(urls_file, 'w') as f:
         f.write(f"YouTrack URLs for Execution {execution_id}\n")
         f.write(f"Execution: {json_data['name']}\n")
+        f.write(f"Project: {selected_project['display_name']}\n")
+        f.write(f"Board: {selected_board}\n")
         f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write("=" * 70 + "\n\n")
 
@@ -542,91 +582,6 @@ def process_squash():
     cleanup_individual_files()
 
     print(f"🎉 Process completed! Check: {urls_file}")
-# def process_squash():
-#     """Process the latest captured Squash TM file"""
-#
-#     # Get latest file
-#     latest_file = get_latest_captured_file()
-#     if not latest_file:
-#         print("❌ No captured JSON files found")
-#         return
-#
-#     print(f"🔄 Processing: {latest_file}")
-#
-#     # Load JSON data
-#     with open(latest_file, 'r') as f:
-#         json_data = json.load(f)
-#
-#     # Extract failed tests
-#     failed_tests = extract_failed_tests(json_data)
-#
-#     if not failed_tests:
-#         print(f"✅ No failed tests found in {latest_file}")
-#         return
-#
-#     print(f"🐛 Found {len(failed_tests)} failed test(s)")
-#
-#     # Process each failed test
-#     all_youtrack_urls = []
-#
-#     for i, failed_test in enumerate(failed_tests):
-#         print(f"🔄 Processing failed test {i + 1}/{len(failed_tests)}")
-#
-#         # Format bug description
-#         bug_description = format_bug_description(failed_test, json_data)
-#
-#         # Prepare CrewAI inputs
-#         inputs = {
-#             'bug_description': bug_description,
-#             'board_sprint': get_board_sprint(),
-#             'board': board,
-#             'current_year': str(datetime.now().year)
-#         }
-#
-#         # Run CrewAI workflow
-#         result = BugBuilder().crew().kickoff(inputs=inputs)
-#
-#         # Rename output files to avoid overwriting
-#         execution_id = json_data['id']
-#         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-#
-#         os.rename('bug_report.md', f'bug_report_{execution_id}_step_{i + 1}_{timestamp}.md')
-#
-#         # Read YouTrack URL
-#         if os.path.exists('youtrack_url.txt'):
-#             with open('youtrack_url.txt', 'r') as f:
-#                 url = f.read().strip()
-#                 all_youtrack_urls.append({
-#                     'step': i + 1,
-#                     'title': f"Step {failed_test['order']} Failure",
-#                     'url': url,
-#                     'scenario_name': extract_scenario_name(failed_test['action'])
-#                 })
-#             os.rename('youtrack_url.txt', f'youtrack_url_{execution_id}_step_{i + 1}_{timestamp}.txt')
-#
-#     # Create consolidated URLs file
-#     execution_id = json_data['id']
-#     urls_file = f'all_youtrack_urls_{execution_id}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.txt'
-#
-#     with open(urls_file, 'w') as f:
-#         f.write(f"YouTrack URLs for Execution {execution_id}\n")
-#         f.write(f"Execution: {json_data['name']}\n")
-#         f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-#         f.write("=" * 70 + "\n\n")
-#
-#         for url_info in all_youtrack_urls:
-#             f.write(f"Bug {url_info['step']}: {url_info['scenario_name']}\n")
-#             f.write(f"Title: {url_info['title']}\n")
-#             f.write(f"URL: {url_info['url']}\n")
-#             f.write("-" * 50 + "\n\n")
-#
-#     print(f"✅ Generated {len(failed_tests)} bug reports")
-#     print(f"📄 Consolidated URLs: {urls_file}")
-#
-#     # Clean up individual files after consolidation
-#     cleanup_individual_files()
-#
-#     print(f"🎉 Process completed! Check: {urls_file}")
 
 
 # === ORIGINAL MAIN FUNCTIONS ===
@@ -635,11 +590,25 @@ def run():
     """
     Run the crew.
     """
+    projects = app_config['youtrack']['projects']
+    default_project_name = app_config['youtrack']['default_project']
+    selected_project = next(
+        (p for p in projects if p['name'] == default_project_name),
+        projects[0]
+    )
+    selected_board = selected_project['boards'][0]['name']
+    selected_sprint = None
+    if selected_project['sprint_format'] == 'sequential':
+        selected_sprint = 1  # default for test/run functions
+
     inputs = {
         'bug_description': """I am using Medscape-Android-PoC-12.17.0-12884725 on Galaxy A32 OS 13, i am already logged in, i tap on the login button from push login email, i am redirected to Medscape app, login keychain page is shown, i choose yes, the login keychain page is showed again infinite times, i chose no, i am redirected to login page""",
-        'board_sprint': get_board_sprint(),  # Dynamic sprint calculation
-        'board': board,
-        'current_year': str(datetime.now().year)
+        'board_sprint': get_board_sprint(selected_project, selected_board, selected_sprint),
+        'board': selected_board,
+        'url_template': selected_project['url_template'],
+        'current_year': str(datetime.now().year),
+        'board_encoded': quote_plus(selected_board),
+        'board_sprint_encoded': quote_plus(get_board_sprint(selected_project, selected_board, selected_sprint)),
     }
 
     try:
@@ -653,10 +622,13 @@ def train():
     Train the crew for a given number of iterations.
     """
     inputs = {
-        'bug_description': 'Your bug description here',
-        'board_sprint': get_board_sprint(),
-        'board': board,
-        'current_year': str(datetime.now().year)
+        'bug_description': bug_description,
+        'board_sprint': get_board_sprint(selected_project, selected_board, selected_sprint),
+        'board': selected_board,
+        'url_template': selected_project['url_template'],
+        'current_year': str(datetime.now().year),
+        'board_encoded': quote_plus(selected_board),
+        'board_sprint_encoded': quote_plus(get_board_sprint(selected_project, selected_board, selected_sprint)),
     }
     try:
         BugBuilder().crew().train(n_iterations=int(sys.argv[1]), filename=sys.argv[2], inputs=inputs)
@@ -678,11 +650,24 @@ def test():
     """
     Test the crew execution and returns the results.
     """
+    projects = app_config['youtrack']['projects']
+    default_project_name = app_config['youtrack']['default_project']
+    selected_project = next(
+        (p for p in projects if p['name'] == default_project_name),
+        projects[0]
+    )
+    selected_board = selected_project['boards'][0]['name']
+    selected_sprint = None
+    if selected_project['sprint_format'] == 'sequential':
+        selected_sprint = 1  # default for test/run function
     inputs = {
         'bug_description': 'Test bug description',
-        'board_sprint': get_board_sprint(),
-        'board': board,
-        'current_year': str(datetime.now().year)
+        'board_sprint': get_board_sprint(selected_project, selected_board, selected_sprint),
+        'board': selected_board,
+        'url_template': selected_project['url_template'],
+        'current_year': str(datetime.now().year),
+        'board_encoded': quote_plus(selected_board),
+        'board_sprint_encoded': quote_plus(get_board_sprint(selected_project, selected_board, selected_sprint)),
     }
     try:
         BugBuilder().crew().test(n_iterations=int(sys.argv[1]), eval_llm=sys.argv[2], inputs=inputs)
@@ -707,9 +692,12 @@ def run_with_trigger():
     inputs = {
         "crewai_trigger_payload": trigger_payload,
         'bug_description': '',
-        'board_sprint': get_board_sprint(),
-        'board': board,
-        'current_year': str(datetime.now().year)
+        'board_sprint': get_board_sprint(selected_project, selected_board, selected_sprint),
+        'board': selected_board,
+        'url_template': selected_project['url_template'],
+        'current_year': str(datetime.now().year),
+        'board_encoded': quote_plus(selected_board),
+        'board_sprint_encoded': quote_plus(get_board_sprint(selected_project, selected_board, selected_sprint)),
     }
 
     try:

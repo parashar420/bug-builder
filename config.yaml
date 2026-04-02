@@ -1,23 +1,39 @@
 youtrack:
-  default_board: "Professional Core App"
-  project: "WBMDMOB"
-  sprint_calculation: "bi-weekly-odd"
-  boards:
-    - name: "Professional Core App"
-      sprint_prefix: "Professional Core App"
-    - name: "Scan - Professional App"
-      sprint_prefix: "Prof Scan App"
-    - name: "Read - Professional App"
-      sprint_prefix: "Prof Read App"
-    - name: "Point of Care - Professional App"
-      sprint_prefix: "Prof PoC App"
-    - name: "Professional Commercial App"
-      sprint_prefix: "Prof Comm App"
+  default_project: "WBMDMOB"
+
+  projects:
+    - name: "WBMDMOB"
+      display_name: "Medscape Professional"
+      sprint_format: "year.week"
+      url_template: "https://youtrack.internetbrands.com/newIssue?project=WBMDMOB&summary=[ENCODED_TITLE]&description=[ENCODED_DESCRIPTION]&c=add+Board+{board_encoded}+{board_sprint_encoded}&c=Type+Project+Bug&c=Subsystems+{board_encoded}&c=Environment%28s%29+Mobile+App&c=Lifecycle+Preview"
+      boards:
+        - name: "Professional Core App"
+          sprint_prefix: "Professional Core App"
+        - name: "Scan - Professional App"
+          sprint_prefix: "Prof Scan App"
+        - name: "Read - Professional App"
+          sprint_prefix: "Prof Read App"
+        - name: "Point of Care - Professional App"
+          sprint_prefix: "Prof PoC App"
+        - name: "Professional Commercial App"
+          sprint_prefix: "Prof Comm App"
+
+    - name: "MEDAIS"
+      display_name: "MedAIS"
+      sprint_format: "sequential"
+      url_template: "https://youtrack.internetbrands.com/newIssue?project=MEDAIS&summary=[ENCODED_TITLE]&description=[ENCODED_DESCRIPTION]&c=add+Board+{board_encoded}+{board_sprint_encoded}&c=Type+Project+Bug&c=Environment%28s%29+Mobile+App"
+      boards:
+        - name: "AI Search FE Web & App"
+          sprint_prefix: "AI"
 
 llm:
   provider: "athena"
   base_url: "https://athena.webmdhelios.com/v1"
   model: "saas-openai-gpt-4.1"
+
+  # Uncomment if getting 401/403 errors from Athena
+  # ticket_id: "WBMDMOB-BugBuilder"
+  # user_id: "parashar.parab@internetbrands.com"
 
 ports:
   mitm_proxy: 8080
