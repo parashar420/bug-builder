@@ -14,6 +14,15 @@ config = app_config
 #from src.bug_builder.crew import BugBuilder
 from bug_builder.crew import BugBuilder
 from urllib.parse import quote_plus
+from bug_builder.utils import (
+    clean_html,
+    get_board_sprint,
+    extract_execution_comment,
+    extract_parent_ticket,
+    extract_scenario_name,
+    get_latest_captured_file,
+    build_inputs
+)
 
 load_dotenv()
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
@@ -25,54 +34,6 @@ warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
 
 
 
-def clean_html(html_text):
-    """Remove HTML tags and clean up whitespace"""
-    if not html_text:
-        return ""
-
-    # Remove HTML tags
-    clean_text = re.sub(r'<[^>]+>', ' ', html_text)
-    # Replace multiple whitespace with single space
-    clean_text = re.sub(r'\s+', ' ', clean_text).strip()
-    #debug
-    print(f"🧹 clean_html() output: {clean_text[:100]}...")
-
-    return clean_text
-
-def get_current_sprint():
-    current_week = datetime.now().isocalendar()[1]
-    if current_week % 2 == 0:
-        sprint_number = current_week - 1
-    else:
-        sprint_number = current_week
-    return f"{sprint_number:02d}"
-
-
-def get_board_sprint(project, board_name, sequential_sprint=None):
-    """Generate sprint string for selected project and board"""
-    sprint_format = project['sprint_format']
-
-    if sprint_format == 'sequential':
-        # MEDAIS style — Sprint 30
-        sprint_prefix = next(
-            (b['sprint_prefix'] for b in project['boards'] if b['name'] == board_name),
-            board_name
-        )
-        return f"{sprint_prefix} Sprint {sequential_sprint}"
-
-    else:
-        # WBMDMOB style — year.week
-        current_week = datetime.now().isocalendar()[1]
-        if current_week % 2 == 0:
-            sprint_number = current_week - 1
-        else:
-            sprint_number = current_week
-        current_year = datetime.now().year
-        sprint_prefix = next(
-            (b['sprint_prefix'] for b in project['boards'] if b['name'] == board_name),
-            board_name
-        )
-        return f"{sprint_prefix} - Sprint {current_year}.{sprint_number:02d}"
 
 
 # === SQUASH TM PROCESSING FUNCTIONS ===
@@ -143,42 +104,6 @@ def cleanup_individual_files():
             print(f"🗑️  Deleted: youtrack_url.txt")
         except Exception as e:
             print(f"❌ Failed to delete youtrack_url.txt: {e}")
-
-
-def get_latest_captured_file():
-    """Get the most recently captured JSON file"""
-    captured_dir = "captured_squash_data"
-
-    if not os.path.exists(captured_dir):
-        return None
-
-    # Get all JSON files
-    json_files = [f for f in os.listdir(captured_dir) if f.endswith('.json')]
-
-    if not json_files:
-        return None
-
-    # Get most recent file
-    latest_file = max(json_files, key=lambda f: os.path.getctime(os.path.join(captured_dir, f)))
-    return os.path.join(captured_dir, latest_file)
-
-# Use comment in the Excecution to Add build and device
-# this will extract and send to Crew Ai to add in the Bug Description
-def extract_execution_comment(json_data):
-    """Extract and clean the root-level execution comment (build/device info)"""
-
-    comment_html = json_data.get('comment', '')
-
-    if not comment_html or comment_html.strip() == '':
-        return "Build and device information not provided. Please refer to test execution environment."
-
-    # Use the better HTML cleaning
-    clean_comment = clean_html(comment_html)
-
-    #debug
-    print(f"📝 extract_execution_comment() output:\n{clean_comment}\n")
-
-    return clean_comment if clean_comment.strip() else "Not provided"
 
 # gets data to populate UI
 def extract_failed_tests(json_data):
@@ -254,55 +179,6 @@ def extract_full_scenario(json_data, failed_step_order):
         'execution_context': json_data
     }
 
-# def extract_full_scenario(json_data, failed_step_order):
-#     """Extract complete test scenario for AI processing"""
-#     all_steps = json_data.get('executionStepViews', [])
-#
-#     # Find the failed step index
-#     failed_index = None
-#     for i, step in enumerate(all_steps):
-#         if step.get('order') == failed_step_order:
-#             failed_index = i
-#             break
-#
-#     if failed_index is None:
-#         return None
-#
-#     # Get all steps UP TO and INCLUDING the failed one
-#     scenario_steps = all_steps[:failed_index + 1]
-#
-#     # Separate prerequisites (SUCCESS) from failed step
-#     prerequisites = []
-#     for step in scenario_steps[:-1]:
-#         clean_action = re.sub(r'<[^>]+>', '', step.get('action', ''))
-#         prerequisites.append({
-#             'order': step.get('order'),
-#             'action': clean_action.strip(),
-#             'status': step.get('executionStatus')
-#         })
-#
-#     # Get the failed step
-#     failed_step = scenario_steps[-1]
-#     clean_failed_action = re.sub(r'<[^>]+>', '', failed_step.get('action', ''))
-#
-#     return {
-#         'prerequisites': prerequisites,
-#         'failed_step': {
-#             'order': failed_step.get('order'),
-#             'action': clean_failed_action.strip(),
-#             'comment': failed_step.get('comment', 'No actual result provided'),
-#             'step_id': failed_step.get('id'),
-#             'executed_on': failed_step.get('lastExecutedOn'),
-#             'executed_by': failed_step.get('lastExecutedBy')
-#         },
-#         'execution_context': {
-#             'id': json_data.get('id'),
-#             'name': json_data.get('name'),
-#             'executed_by': json_data.get('lastExecutedBy'),
-#             'executed_on': json_data.get('lastExecutedOn')
-#         }
-#     }
-
 
 def format_bug_description_for_ai(full_scenario):
     """Format complete test scenario for AI processing"""
@@ -355,95 +231,6 @@ STEP ID: {failed['step_id']}
     print("=" * 70)
     print("\n")
     return description.strip()
-
-    #return description.strip()
-
-
-# def format_bug_description_for_ai(full_scenario):
-#     """Format complete test scenario for AI processing"""
-#
-#     if not full_scenario:
-#         return None
-#
-#     # Build prerequisite steps section
-#     prerequisites_section = ""
-#     if full_scenario['prerequisites']:
-#         prerequisites_lines = []
-#         for i, step in enumerate(full_scenario['prerequisites'], 1):
-#             prerequisites_lines.append(f"{i}. {step['action']}")
-#         prerequisites_section = f"""
-# PREREQUISITE STEPS (Passed):
-# {chr(10).join(prerequisites_lines)}
-# """
-#
-#     # Build the complete description
-#     ctx = full_scenario['execution_context']
-#     failed = full_scenario['failed_step']
-#
-#     failed_step_number = len(full_scenario['prerequisites']) + 1
-#
-#     description = f"""
-# Test Execution: {ctx['id']}
-# Test Suite: {ctx['name']}
-# Executed By: {ctx['executed_by']}
-# Executed On: {ctx['executed_on']}
-# {prerequisites_section}
-# FAILED STEP:
-# {failed_step_number}. {failed['action']}
-#
-# ACTUAL RESULT:
-# {failed['comment']}
-#
-# STEP ORDER IN TEST: {failed['order']}
-# STEP ID: {failed['step_id']}
-# """
-#
-#     return description.strip()
-
-# def format_bug_description(failed_test, execution_context):
-#     """Convert failed test to bug description format"""
-#
-#     action_text = failed_test['action']
-#     # Clean HTML and extract scenario info
-#     clean_action = re.sub(r'<[^>]+>', '', action_text)
-#
-#     description = f"""
-# Test execution {execution_context['id']} failed.
-#
-# Test: {execution_context['name']}
-# Executed by: {execution_context['lastExecutedBy']}
-# Executed on: {execution_context['lastExecutedOn']}
-#
-# FAILED SCENARIO:
-# {clean_action}
-#
-# ACTUAL RESULT:
-# {failed_test['comment']}
-#
-# STEP ORDER: {failed_test['order']}
-# STEP ID: {failed_test['step_id']}
-# """
-#
-#     return description.strip()
-
-
-def extract_scenario_name(action_text):
-    """Extract clean scenario name for UI hyperlinks"""
-    # Remove HTML tags and clean whitespace
-    clean_text = clean_html(action_text)  # UPDATED
-
-    # Try to extract scenario name
-    scenario_match = re.search(r'Scenario[^:]*:?\s*([^\n\r]+)', clean_text)
-    if scenario_match:
-        return scenario_match.group(1).strip()
-
-    # Fallback: get first meaningful line
-    lines = [line.strip() for line in clean_text.split('\n') if line.strip()]
-    if lines:
-        return lines[0][:50] + "..." if len(lines[0]) > 50 else lines[0]
-
-
-    return "Unknown Scenario"
 
 def process_squash():
     """Process the latest captured Squash TM file"""
@@ -511,18 +298,10 @@ def process_squash():
 
         # Format with complete context for AI
         bug_description = format_bug_description_for_ai(full_scenario)
+        parent_ticket = extract_parent_ticket(json_data)
 
         # Prepare CrewAI inputs
-        inputs = {
-            'bug_description': bug_description,
-            'board_sprint': get_board_sprint(selected_project, selected_board, selected_sprint),
-            'board': selected_board,
-            'url_template': selected_project['url_template'],
-            'current_year': str(datetime.now().year),
-            # Pre-encoded versions for URL template
-            'board_encoded': quote_plus(selected_board),
-            'board_sprint_encoded': quote_plus(get_board_sprint(selected_project, selected_board, selected_sprint)),
-        }
+        inputs = build_inputs(bug_description, selected_project, selected_board, selected_sprint, parent_ticket)
 
         print(f"🚀 SENDING TO CREWAI:")
         print(f"   Bug description length: {len(bug_description)} characters")
@@ -597,19 +376,12 @@ def run():
         projects[0]
     )
     selected_board = selected_project['boards'][0]['name']
+    parent_ticket = extract_parent_ticket(json_data)
     selected_sprint = None
     if selected_project['sprint_format'] == 'sequential':
         selected_sprint = 1  # default for test/run functions
 
-    inputs = {
-        'bug_description': """I am using Medscape-Android-PoC-12.17.0-12884725 on Galaxy A32 OS 13, i am already logged in, i tap on the login button from push login email, i am redirected to Medscape app, login keychain page is shown, i choose yes, the login keychain page is showed again infinite times, i chose no, i am redirected to login page""",
-        'board_sprint': get_board_sprint(selected_project, selected_board, selected_sprint),
-        'board': selected_board,
-        'url_template': selected_project['url_template'],
-        'current_year': str(datetime.now().year),
-        'board_encoded': quote_plus(selected_board),
-        'board_sprint_encoded': quote_plus(get_board_sprint(selected_project, selected_board, selected_sprint)),
-    }
+    inputs = build_inputs(bug_description, selected_project, selected_board, selected_sprint, parent_ticket)
 
     try:
         BugBuilder().crew().kickoff(inputs=inputs)
@@ -621,15 +393,7 @@ def train():
     """
     Train the crew for a given number of iterations.
     """
-    inputs = {
-        'bug_description': bug_description,
-        'board_sprint': get_board_sprint(selected_project, selected_board, selected_sprint),
-        'board': selected_board,
-        'url_template': selected_project['url_template'],
-        'current_year': str(datetime.now().year),
-        'board_encoded': quote_plus(selected_board),
-        'board_sprint_encoded': quote_plus(get_board_sprint(selected_project, selected_board, selected_sprint)),
-    }
+    inputs = build_inputs(bug_description, selected_project, selected_board, selected_sprint, parent_ticket)
     try:
         BugBuilder().crew().train(n_iterations=int(sys.argv[1]), filename=sys.argv[2], inputs=inputs)
     except Exception as e:
@@ -660,15 +424,7 @@ def test():
     selected_sprint = None
     if selected_project['sprint_format'] == 'sequential':
         selected_sprint = 1  # default for test/run function
-    inputs = {
-        'bug_description': 'Test bug description',
-        'board_sprint': get_board_sprint(selected_project, selected_board, selected_sprint),
-        'board': selected_board,
-        'url_template': selected_project['url_template'],
-        'current_year': str(datetime.now().year),
-        'board_encoded': quote_plus(selected_board),
-        'board_sprint_encoded': quote_plus(get_board_sprint(selected_project, selected_board, selected_sprint)),
-    }
+    inputs = build_inputs(bug_description, selected_project, selected_board, selected_sprint, parent_ticket)
     try:
         BugBuilder().crew().test(n_iterations=int(sys.argv[1]), eval_llm=sys.argv[2], inputs=inputs)
     except Exception as e:
@@ -689,16 +445,7 @@ def run_with_trigger():
     except json.JSONDecodeError:
         raise Exception("Invalid JSON payload provided as argument")
 
-    inputs = {
-        "crewai_trigger_payload": trigger_payload,
-        'bug_description': '',
-        'board_sprint': get_board_sprint(selected_project, selected_board, selected_sprint),
-        'board': selected_board,
-        'url_template': selected_project['url_template'],
-        'current_year': str(datetime.now().year),
-        'board_encoded': quote_plus(selected_board),
-        'board_sprint_encoded': quote_plus(get_board_sprint(selected_project, selected_board, selected_sprint)),
-    }
+    inputs = build_inputs(bug_description, selected_project, selected_board, selected_sprint, parent_ticket)
 
     try:
         result = BugBuilder().crew().kickoff(inputs=inputs)
