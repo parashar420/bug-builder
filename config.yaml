@@ -31,9 +31,6 @@ llm:
   base_url: "https://athena.webmdhelios.com/v1"
   model: "saas-openai-gpt-4.1"
 
-  # Uncomment if getting 401/403 errors from Athena
-  # ticket_id: "WBMDMOB-BugBuilder"
-  # user_id: "parashar.parab@internetbrands.com"
 
 ports:
   mitm_proxy: 8080
@@ -42,4 +39,5 @@ ports:
 
 paths:
   capture_dir: "captured_squash_data"
+  testcase_capture_dir: "captured_testcase_data"
   addon_script: "squash_capture.py"
