@@ -7,6 +7,7 @@ venv/
 
 # ─── Runtime Data ─────────────────────────────────────────────────────────────
 captured_squash_data/
+captured_testcase_data/
 
 # ─── AI Output Files ──────────────────────────────────────────────────────────
 bug_report*.md
