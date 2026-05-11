@@ -41,3 +41,8 @@ uv.lock
 
 # ─── Knowledge / User Preferences (personal) ─────────────────────────────────
 knowledge/
+
+plan-bugBuilder.prompt.md
+
+# ─── Runtime state (auto-generated, not source) ───────────────────────────────
+.capture_mode
