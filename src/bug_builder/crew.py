@@ -42,6 +42,14 @@ class BugBuilder():
             llm=self.llm
         )
 
+    @agent
+    def testcase_bug_report_specialist(self) -> Agent:
+        return Agent(
+            config=self.agents_config['testcase_bug_report_specialist'],
+            verbose=True,
+            llm=self.llm
+        )
+
     # Bug tracking tasks
     @task
     def generate_bug_report(self) -> Task:
@@ -57,12 +65,29 @@ class BugBuilder():
             output_file='youtrack_url.txt'
         )
 
+    @task
+    def generate_testcase_bug_report(self) -> Task:
+        return Task(
+            config=self.tasks_config['generate_testcase_bug_report'],
+            output_file='bug_report.md'
+        )
+
     @crew
-    def crew(self) -> Crew:
-        """Creates the BugBuilder crew"""
+    def crew(self, mode='gherkin') -> Crew:
+        """Creates the BugBuilder crew with mode-specific tasks"""
+        normalized_mode = (mode or 'gherkin').strip().lower()
+        if normalized_mode in {'testcase', 'testcases'}:
+            tasks = [self.generate_testcase_bug_report(), self.generate_youtrack_url()]
+        else:
+            tasks = [self.generate_bug_report(), self.generate_youtrack_url()]
+        
         return Crew(
-            agents=self.agents,  # Automatically created by the @agent decorator
-            tasks=self.tasks,    # Automatically created by the @task decorator
+            agents=[
+                self.bug_report_specialist(),
+                self.testcase_bug_report_specialist(),
+                self.youtrack_url_generator(),
+            ],
+            tasks=tasks,
             process=Process.sequential,
             verbose=True,
         )

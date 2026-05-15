@@ -18,6 +18,12 @@ generate_bug_report:
     specific fields and continue generating the report.
     Extract all other technical details including app/platform, environmental conditions, prerequisite steps, failed
     step, and actual result from the bug description.
+    ACTUAL RESULT SOURCE OF TRUTH (MANDATORY):
+    - Treat tester-provided failure comments as the primary source for Actual Result.
+    - If the input contains an "ACTUAL RESULT:" section, use that content as authoritative.
+    - If step comments are present (for example in failed step/comment fields), derive Actual Result directly from those comments.
+    - Do NOT invent a different failure that is not supported by the provided comments.
+    - If comments/actual observations are missing, the Actual Result bullet MUST be exactly: '[ADD ACTUAL RESULT HERE]'
     CRITICAL QUALITY RULES:
 
         1. PRECONDITION-TO-STEPS ALIGNMENT:
@@ -128,3 +134,112 @@ generate_youtrack_url:
     YouTrack with all fields pre-filled. The URL should be properly encoded
     and ready for immediate use.
   agent: youtrack_url_generator
+
+generate_testcase_bug_report:
+  description: >
+    Parse the provided testcase execution data: {bug_description}
+
+    The input contains a set of sequential testcase actions, their individual expected
+    results per action, and observed failure outcomes from one or more failed actions.
+    Your job is to produce ONE unified professional bug report for this testcase.
+
+    EXTRACTION INSTRUCTIONS:
+    The input includes a "BUILD & ENVIRONMENT INFO" section. Extract intelligently:
+    BUILD PATTERNS: "Build: <version>", "build <version>" (case insensitive),
+      version strings like "12.35.0", "Medscape-Web-12.19.0"
+    BROWSER PATTERNS: "Browser: <name>", "browser <name>" (case insensitive),
+      e.g. "Chrome 124", "Safari 17", "Firefox 126", "Edge 123"
+    ENVIRONMENT PATTERNS: "Environment: <value>", e.g. "Staging", "Production"
+    OS PATTERNS: "OS: <version>", e.g. "Windows 11", "macOS Sequoia", "macOS Ventura"
+    SCREEN RESOLUTION PATTERNS: "Resolution: <value>", e.g. "1920x1080", "1440p"
+    If Browser, OS, Environment field is missing, use "Not specified" and continue generating the report,
+    If any other field is present addit in the Tested On: section, if not specified do not add the field in the report.
+
+    ACTUAL RESULT SOURCE OF TRUTH (MANDATORY):
+    - Use tester-provided comments on failed actions as the primary source.
+    - If multiple failed actions have comments, synthesize into ONE concise sentence.
+    - Do NOT contradict or replace explicit tester observations.
+    - If no comments exist, the Actual Result bullet MUST be exactly: '[ADD ACTUAL RESULT HERE]'
+
+    EXPECTED RESULT SYNTHESIS (MANDATORY):
+    - Read ALL individual expected results across every action.
+    - Identify the ONE primary outcome that defines testcase success as a whole.
+    - Express it as a single sentence — not a list of every step's expectation.
+    - Example: actions expecting "page loads", "fields populated", "form accepted"
+      → synthesize to: "User can successfully complete and submit the form"
+    - Do NOT concatenate all expectations; extract the ESSENTIAL goal.
+
+    CRITICAL QUALITY RULES:
+
+        1. PRECONDITION-TO-STEPS ALIGNMENT:
+           - If a prerequisite mentions a page/state, the FIRST step must show how to reach it from opening the site or logging in — never leave navigation gaps.
+           - Do NOT fabricate steps not supported by the input.
+
+        2. ACTUAL RESULT CONCISENESS:
+           - 1-2 sentences maximum.
+           - Format: "[Primary failure]; [Secondary observable issue]"
+           - Example: "Form submission fails; data is not persisted"
+           - NOT: a bullet list of every missing element.
+
+        3. EXPECTED RESULT CONCISENESS:
+           - Single sentence stating the testcase's intended overall outcome.
+           - Example: "User can complete the full flow and submit successfully"
+           - NOT: a list of every step's individual expectation.
+
+        4. REPRODUCIBILITY EXTRACTION:
+           - If input contains "intermittent", "consistent", "always", "only when",
+             add a note after Expected Result.
+           - Format: "Note: [Reproducibility context]"
+
+        5. INLINE STEP GUIDANCE:
+           - If a condition makes reproduction easier, add it inline in parentheses.
+           - Example: "Click Submit (ensure all fields are filled first)"
+
+        6. STEPS NUMBERING:
+           - Derive Steps to Reproduce from the testcase actions.
+           - Combine related actions into single steps where logical.
+           - Each step = one user action or one verification point.
+           - Use clear present-tense action verbs.
+
+    Generate the bug report using EXACTLY this format:
+    **Title:** Medscape Web | [Component/Area] | [Behavior/Issue]
+    **Tested On:**
+      * Browser: [extracted browser name and version or "Not specified"]
+      * OS: [extracted operating system or "Not specified"]
+      * Environment: [extracted Environment or "Not specified"]
+    ---
+    **Preconditions:**
+      * [Only essential site state or environment setup]
+      * [User login state if relevant]
+      * [Do NOT include page navigation steps here]
+    ---
+    **Steps to Reproduce:**
+      * [ALL navigation from precondition state to failure point]
+      * [Each step is one clear user action]
+      * [Add inline guidance in parentheses where helpful]
+    ---
+    **Actual Result:**
+      * [1-2 sentence summary synthesized from tester comments on failed actions]
+    ---
+    **Expected Result:**
+      * [Single sentence: the primary outcome the testcase is meant to achieve]
+
+    CRITICAL FORMATTING RULES:
+    - Use exactly "---" as section separators
+    - Include blank lines before and after each "---"
+    - Use bold headers with colon: "**Section Name:**"
+    - Leave blank line after each header before content
+    - Use bullet points (*) for all list content
+    - Present tense throughout
+    - No introductory text, no commentary, no explanations
+    - Output must be directly copy-pasteable
+    - Do NOT ask for missing information — use "Not specified" and continue
+
+  expected_output: >
+    A professional bug report in markdown format with all sections filled in:
+    Title, Tested On, Preconditions, Steps to Reproduce, Actual Result, Expected Result.
+    The Expected Result is the single primary outcome the testcase is meant to achieve.
+  agent: testcase_bug_report_specialist
+
+
+
