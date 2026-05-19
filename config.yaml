@@ -5,7 +5,7 @@ youtrack:
     - name: "WBMDMOB"
       display_name: "Medscape Professional"
       sprint_format: "year.week"
-      url_template: "https://youtrack.internetbrands.com/newIssue?project=WBMDMOB&summary=[ENCODED_TITLE]&description=[ENCODED_DESCRIPTION]&c=add+Board+{board_encoded}+{board_sprint_encoded}&c=Type+Project+Bug&c=Subsystems+{board_encoded}&c=Environment%28s%29+Mobile+App&c=Lifecycle+Preview"
+      url_template: "https://youtrack.internetbrands.com/newIssue?project=WBMDMOB&summary=[ENCODED_TITLE]&description=[ENCODED_DESCRIPTION]&c=subtask+of+{parent_ticket}&c=add+Board+{board_encoded}+{board_sprint_encoded}&c=Type+Project+Bug&c=Subsystems+{board_encoded}&c=Environment%28s%29+Mobile+App&c=Lifecycle+Preview&c=tag+Star"
       boards:
         - name: "Professional Core App"
           sprint_prefix: "Professional Core App"
@@ -21,7 +21,7 @@ youtrack:
     - name: "MEDAIS"
       display_name: "MedAIS"
       sprint_format: "sequential"
-      url_template: "https://youtrack.internetbrands.com/newIssue?project=MEDAIS&summary=[ENCODED_TITLE]&description=[ENCODED_DESCRIPTION]&c=add+Board+{board_encoded}+{board_sprint_encoded}&c=Type+Project+Bug&c=Environment%28s%29+Mobile+App"
+      url_template: "https://youtrack.internetbrands.com/newIssue?project=MEDAIS&summary=[ENCODED_TITLE]&description=[ENCODED_DESCRIPTION]&c=subtask+of+{parent_ticket}&c=add+Board+{board_encoded}+{board_sprint_encoded}&c=Type+Project+Bug&c=Environment%28s%29+Mobile+App&c=Lifecycle+Preview&c=tag+Star"
       boards:
         - name: "AI Search FE Web & App"
           sprint_prefix: "AI"

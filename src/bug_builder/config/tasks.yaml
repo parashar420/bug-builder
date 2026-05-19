@@ -116,13 +116,18 @@ generate_youtrack_url:
        - Keep markdown formatting intact
 
     Build the URL using the exact template provided in {url_template}.
-    - Replace [ENCODED_TITLE] with the URL-encoded title
-    - Replace [ENCODED_DESCRIPTION] with the URL-encoded description  
-    - {board_encoded} plus {board_sprint_encoded} are pre-encoded — copy them exactly as-is into the URL
-    - Do NOT add any words like "and" between values
-    - Do NOT modify the template structure in any way
-
-    Output only the complete URL, nothing else. No explanation, no markdown, just the raw URL.
+        - Replace [ENCODED_TITLE] with the URL-encoded title
+        - Replace [ENCODED_DESCRIPTION] with the URL-encoded description
+        - {board_encoded} and {board_sprint_encoded} are pre-encoded — copy them exactly as-is into the URL
+        - {parent_ticket} is the parent ticket ID — copy it exactly as-is into the URL
+        - Do NOT add any words like "and" between values
+        - Do NOT modify the template structure in any way
+    
+    CRITICAL URL RULES:
+    - Output ONLY the raw URL
+    - Do NOT add a period, full stop, or any punctuation after the URL
+    - Do NOT add any text before or after the URL
+    - The URL must end with the last parameter value, nothing else not even a period
 
   expected_output: >
     A complete YouTrack issue creation URL that when clicked will open

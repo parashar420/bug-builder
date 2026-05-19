@@ -7,6 +7,7 @@ import re
 import time
 import traceback
 import hashlib
+import subprocess
 from datetime import datetime
 from bug_builder import app_config, athena_token
 config = app_config
@@ -16,6 +17,15 @@ from src.bug_builder.ui.modes.gherkin_page import render_gherkin_mitm_panel
 from src.bug_builder.ui.modes.testcases_page import render_testcases_mitm_panel
 from src.bug_builder.ui.services.session_service import init_session_state, reset_body_state
 from urllib.parse import quote_plus
+from bug_builder.utils import (
+    clean_html,
+    get_board_sprint,
+    extract_execution_comment,
+    extract_parent_ticket,
+    extract_scenario_name,
+    get_latest_captured_file,
+    build_inputs
+)
 
 st.set_page_config(
     page_title="Bug Builder - Squash TM Processor",
@@ -24,6 +34,41 @@ st.set_page_config(
 )
 
 init_session_state()
+
+
+def render_subtask_copy_row(parent_ticket):
+    """Render one Streamlit 5-column row with left-aligned text and copy control."""
+    if not parent_ticket:
+        return
+
+    combined_text = f"Type Project Bug subtask of {parent_ticket}"
+    control_id = re.sub(r'[^a-zA-Z0-9_-]', '_', parent_ticket)
+    col1, col2, col3, col4, col5 = st.columns(5, vertical_alignment="center")
+
+    with col1:
+        st.markdown(f"**{combined_text}**")
+
+    with col2:
+        if st.button("📋", key=f"copy-inline-{control_id}", help="Copy full text"):
+            try:
+                subprocess.run(
+                    ["pbcopy"],
+                    input=combined_text,
+                    text=True,
+                    check=True,
+                )
+                st.toast("Copied full line")
+            except Exception:
+                st.warning("Clipboard copy failed on this environment")
+
+    with col3:
+        st.write("")
+
+    with col4:
+        st.write("")
+
+    with col5:
+        st.write("")
 
 
 def persist_capture_mode(mode):
@@ -37,7 +82,6 @@ def persist_capture_mode(mode):
             f.write(normalized)
     except Exception as exc:
         st.warning(f"Could not persist capture mode to addon: {exc}")
-
 
 def get_board_sprint(project, board_name, sequential_sprint=None):
     """Generate sprint string for selected project and board"""
@@ -303,7 +347,6 @@ def analyze_testcase_files(file_bundle):
         'execution_map': execution_map,
     }
 
-
 def analyze_json_data(json_data):
     """Analyze JSON data and extract test statistics"""
     if not json_data or 'executionStepViews' not in json_data:
@@ -511,17 +554,8 @@ ACTUAL RESULT:
 See description above.
 """
 
-                    inputs = {
-                        'bug_description': bug_description,
-                        'board_sprint': get_board_sprint(selected_project, selected_board, selected_sprint),
-                        'board': selected_board,
-                        'url_template': selected_project['url_template'],
-                        'current_year': str(datetime.now().year),
-                        # Pre-encoded versions for URL template
-                        'board_encoded': quote_plus(selected_board),
-                        'board_sprint_encoded': quote_plus(
-                            get_board_sprint(selected_project, selected_board, selected_sprint)),
-                    }
+                    parent_ticket = None
+                    inputs = build_inputs(bug_description, selected_project, selected_board, selected_sprint, parent_ticket)
 
                     BugBuilder().crew().kickoff(inputs=inputs)
 
@@ -549,17 +583,6 @@ See description above.
         st.markdown("---")
         st.markdown("**🔗 Your YouTrack Ticket:**")
         st.markdown(f"[📋 Open in YouTrack]({st.session_state.nl_processing_result})")
-
-        # st.info("💡 Enable popups for localhost:8501 before clicking.")
-        # if st.button("🌐 Open URL"):
-        #     st.components.v1.html(
-        #         f"<script>window.open('{st.session_state.nl_processing_result}', '_blank');</script>",
-        #         height=0
-        #     )
-        #
-        # if st.button("🔄 Create Another"):
-        #     st.session_state.nl_processing_result = None
-        #     st.rerun()
 
 # ─── Analysis Results Section ─────────────────────────────────────────────────
 if st.session_state.analysis_results:
@@ -649,16 +672,12 @@ if st.session_state.analysis_results:
                     else:
                         bug_description = format_bug_description(failed_test, execution_context, source_json)
 
-                    inputs = {
-                        'bug_description': bug_description,
-                        'board_sprint': get_board_sprint(selected_project, selected_board, selected_sprint),
-                        'board': selected_board,
-                        'url_template': selected_project['url_template'],
-                        'current_year': str(datetime.now().year),
-                        'board_encoded': quote_plus(selected_board),
-                        'board_sprint_encoded': quote_plus(
-                            get_board_sprint(selected_project, selected_board, selected_sprint)),
-                    }
+                    parent_ticket = extract_parent_ticket(source_json)
+                    print(f"📝 Raw comment field: {source_json.get('comment', 'EMPTY')[:200]}")
+                    print(f"🎫 Parent ticket extracted: {parent_ticket}")
+
+                    inputs = build_inputs(bug_description, selected_project, selected_board, selected_sprint, parent_ticket)
+                    print(f"🎫 Parent ticket in inputs: {inputs['parent_ticket']}")
 
                     try:
                         mode = results.get('mode', 'gherkin')
@@ -687,6 +706,7 @@ if st.session_state.analysis_results:
                             'youtrack_url': youtrack_url,
                             'scenario_name': scenario_name,
                             'scenario_number': scenario_number,
+                            'parent_ticket': parent_ticket,
                             'status': 'completed'
                         })
 
@@ -762,6 +782,16 @@ if st.session_state.analysis_results:
 if st.session_state.processing_results:
     st.header("📄 Generated Bug Reports")
     st.subheader("🔗 Quick Access")
+
+    parent_ticket = next(
+        (
+            result.get('parent_ticket')
+            for result in st.session_state.processing_results
+            if result.get('status') == 'completed' and result.get('parent_ticket')
+        ),
+        None,
+    )
+    render_subtask_copy_row(parent_ticket)
 
     for result in st.session_state.processing_results:
         if result['status'] == 'completed' and result['youtrack_url'] != "Not generated":
