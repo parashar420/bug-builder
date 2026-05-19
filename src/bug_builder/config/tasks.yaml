@@ -127,7 +127,7 @@ generate_youtrack_url:
     - Output ONLY the raw URL
     - Do NOT add a period, full stop, or any punctuation after the URL
     - Do NOT add any text before or after the URL
-    - The URL must end with the last parameter value, nothing else
+    - The URL must end with the last parameter value, nothing else not even a period
 
   expected_output: >
     A complete YouTrack issue creation URL that when clicked will open

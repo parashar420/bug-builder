@@ -7,6 +7,7 @@ import re
 import time
 import traceback
 import hashlib
+import subprocess
 from datetime import datetime
 from bug_builder import app_config, athena_token
 config = app_config
@@ -33,6 +34,41 @@ st.set_page_config(
 )
 
 init_session_state()
+
+
+def render_subtask_copy_row(parent_ticket):
+    """Render one Streamlit 5-column row with left-aligned text and copy control."""
+    if not parent_ticket:
+        return
+
+    combined_text = f"Type Project Bug subtask of {parent_ticket}"
+    control_id = re.sub(r'[^a-zA-Z0-9_-]', '_', parent_ticket)
+    col1, col2, col3, col4, col5 = st.columns(5, vertical_alignment="center")
+
+    with col1:
+        st.markdown(f"**{combined_text}**")
+
+    with col2:
+        if st.button("📋", key=f"copy-inline-{control_id}", help="Copy full text"):
+            try:
+                subprocess.run(
+                    ["pbcopy"],
+                    input=combined_text,
+                    text=True,
+                    check=True,
+                )
+                st.toast("Copied full line")
+            except Exception:
+                st.warning("Clipboard copy failed on this environment")
+
+    with col3:
+        st.write("")
+
+    with col4:
+        st.write("")
+
+    with col5:
+        st.write("")
 
 
 def persist_capture_mode(mode):
@@ -670,6 +706,7 @@ if st.session_state.analysis_results:
                             'youtrack_url': youtrack_url,
                             'scenario_name': scenario_name,
                             'scenario_number': scenario_number,
+                            'parent_ticket': parent_ticket,
                             'status': 'completed'
                         })
 
@@ -745,6 +782,16 @@ if st.session_state.analysis_results:
 if st.session_state.processing_results:
     st.header("📄 Generated Bug Reports")
     st.subheader("🔗 Quick Access")
+
+    parent_ticket = next(
+        (
+            result.get('parent_ticket')
+            for result in st.session_state.processing_results
+            if result.get('status') == 'completed' and result.get('parent_ticket')
+        ),
+        None,
+    )
+    render_subtask_copy_row(parent_ticket)
 
     for result in st.session_state.processing_results:
         if result['status'] == 'completed' and result['youtrack_url'] != "Not generated":
