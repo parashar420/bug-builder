@@ -8,14 +8,16 @@ import time
 import traceback
 import hashlib
 import subprocess
+import httpx
 from datetime import datetime
-from bug_builder import app_config, athena_token
+from bug_builder import app_config, athena_token, squash_token
 config = app_config
 from src.bug_builder.crew import BugBuilder
 from src.bug_builder.ui.header import render_header
-from src.bug_builder.ui.modes.gherkin_page import render_gherkin_mitm_panel
-from src.bug_builder.ui.modes.testcases_page import render_testcases_mitm_panel
+from src.bug_builder.ui.modes.squash_api_panel import render_squash_api_panel
 from src.bug_builder.ui.services.session_service import init_session_state, reset_body_state
+from bug_builder.squash_client import SquashClient
+from bug_builder.squash_extractor import SquashExtractor
 from urllib.parse import quote_plus
 from bug_builder.utils import (
     clean_html,
@@ -384,6 +386,88 @@ def analyze_json_data(json_data):
     }
 
 
+def analyze_api_gherkin_payloads(payloads):
+    """Aggregate multiple API execution payloads for gherkin mode."""
+    total_steps = 0
+    passed_steps = 0
+    failed_steps = 0
+    failed_tests = []
+    execution_map = {}
+
+    for payload in payloads:
+        result = analyze_json_data(payload)
+        if not result:
+            continue
+
+        execution_key = f"{payload.get('id')}|{payload.get('lastExecutedOn')}"
+        execution_map[execution_key] = payload
+
+        total_steps += result.get('total_steps', 0)
+        passed_steps += result.get('passed_steps', 0)
+        failed_steps += result.get('failed_steps', 0)
+
+        for step in result.get('failed_tests', []):
+            enriched = dict(step)
+            enriched['execution_key'] = execution_key
+            enriched['execution_id'] = result.get('execution_id')
+            enriched['execution_name'] = result.get('execution_name')
+            enriched['executed_by'] = result.get('executed_by')
+            enriched['executed_on'] = result.get('executed_on')
+            failed_tests.append(enriched)
+
+    return {
+        'mode': 'gherkin',
+        'execution_id': 'MULTI',
+        'execution_name': f"{len(payloads)} execution payload(s)",
+        'executed_by': 'Multiple',
+        'executed_on': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'total_steps': total_steps,
+        'passed_steps': passed_steps,
+        'failed_steps': failed_steps,
+        'failed_tests': failed_tests,
+        'files_processed': len(payloads),
+        'skipped_files': [],
+        'execution_map': execution_map,
+    }
+
+
+def build_api_testcase_bundle(payloads):
+    """Shape API payloads to the same bundle contract used by testcase analysis."""
+    files = []
+    for payload in payloads:
+        execution_id = str(payload.get('id', 'unknown'))
+        last_executed_on = str(payload.get('lastExecutedOn', 'unknown'))
+        files.append({
+            'file_path': f"api://executions/{execution_id}",
+            'file_name': f"execution_{execution_id}.json",
+            'json_data': payload,
+            'execution_id': execution_id,
+            'last_executed_on': last_executed_on,
+            'ctime': time.time(),
+        })
+    return {'files': files, 'skipped': []}
+
+
+def extract_from_squash_api(iteration_id, mode):
+    """Fetch and normalize failed executions from Squash REST API."""
+    if not squash_token:
+        raise ValueError("Squash token is missing. Add it to squash_token.txt.")
+
+    squash_base_url = config.get('squash', {}).get('base_url')
+    if not squash_base_url:
+        raise ValueError("Squash base_url is missing in config.yaml under squash.base_url")
+
+    with SquashClient(base_url=squash_base_url, token=squash_token) as client:
+        payloads = SquashExtractor(client).extract(iteration_id)
+
+    if mode == 'testcases':
+        results = analyze_testcase_files(build_api_testcase_bundle(payloads))
+    else:
+        results = analyze_api_gherkin_payloads(payloads)
+
+    return payloads, results
+
+
 def format_bug_description(failed_test, execution_context, json_data):
     """Convert failed test to bug description format with build/device info"""
     clean_action = clean_html(failed_test['action'])
@@ -487,20 +571,32 @@ col1, col2 = st.columns(2)
 
 # ─── MITM Monitoring ──────────────────────────────────────────────────────────
 with col1:
-    if st.session_state.mode == 'gherkin':
-        render_gherkin_mitm_panel(
-            check_for_new_mitm_file=check_for_new_mitm_file,
-            get_capture_dir=get_capture_dir,
-            is_execution_payload=is_execution_payload,
-            is_failed_execution_payload=is_failed_execution_payload,
-            analyze_json_data=analyze_json_data,
-        )
-    else:
-        render_testcases_mitm_panel(
-            get_execution_file_bundle_for_testcases=get_execution_file_bundle_for_testcases,
-            get_capture_dir=get_capture_dir,
-            analyze_testcase_files=analyze_testcase_files,
-        )
+    iteration_text, extract_clicked = render_squash_api_panel(st.session_state.mode)
+
+    if extract_clicked:
+        raw_value = (iteration_text or '').strip()
+        if not raw_value.isdigit():
+            st.error("❌ Please enter a valid numeric iteration ID.")
+        else:
+            iteration_id = int(raw_value)
+            with st.spinner(f"Fetching failed executions from Squash iteration {iteration_id}..."):
+                try:
+                    payloads, api_results = extract_from_squash_api(iteration_id, st.session_state.mode)
+                    if not payloads:
+                        st.warning("⚠️ No failed executions found for this iteration.")
+                    else:
+                        st.session_state.input_source = "api"
+                        st.session_state.api_iteration_id = iteration_id
+                        st.session_state.json_data = None
+                        st.session_state.analysis_results = api_results
+                        st.session_state.processing_results = []
+                        st.success(f"✅ Loaded {len(payloads)} failed execution payload(s) from Squash API")
+                        st.rerun()
+                except httpx.HTTPStatusError as exc:
+                    status = exc.response.status_code if exc.response is not None else "unknown"
+                    st.error(f"❌ Squash API request failed (HTTP {status}).")
+                except Exception as exc:
+                    st.error(f"❌ API extraction failed: {exc}")
 
 # ─── Natural Language Bug Input ───────────────────────────────────────────────
 with col2:
@@ -589,7 +685,12 @@ if st.session_state.analysis_results:
     st.header("📊 Analysis Results")
 
     results = st.session_state.analysis_results
-    source_icon = "🔍" if st.session_state.input_source == "mitm" else "✏️"
+    if st.session_state.input_source == "mitm":
+        source_icon = "🔍"
+    elif st.session_state.input_source == "api":
+        source_icon = "☁️"
+    else:
+        source_icon = "✏️"
     st.info(f"{source_icon} Data source: {st.session_state.input_source.upper()}")
 
     if results.get('mode') == 'testcases':
@@ -646,9 +747,9 @@ if st.session_state.analysis_results:
                     progress_bar.progress((i + 1) / len(results['failed_tests']))
 
                     source_json = st.session_state.json_data
-                    if results.get('mode') == 'testcases':
-                        execution_key = failed_test.get('execution_key')
-                        source_json = results.get('execution_map', {}).get(execution_key)
+                    execution_key = failed_test.get('execution_key')
+                    if execution_key:
+                        source_json = results.get('execution_map', {}).get(execution_key, source_json)
 
                     if source_json is None:
                         st.session_state.processing_results.append({
@@ -772,11 +873,33 @@ if st.session_state.analysis_results:
                     st.session_state.processing_results = []
                     st.rerun()
             else:
-                st.session_state.json_data = None
-                st.session_state.input_source = None
-                st.session_state.analysis_results = None
-                st.session_state.processing_results = []
-                st.rerun()
+                if st.session_state.input_source == "api":
+                    iteration_id = st.session_state.get('api_iteration_id')
+                    if not iteration_id:
+                        st.warning("⚠️ No previous API iteration ID found.")
+                    else:
+                        with st.spinner(f"Refreshing Squash API data for iteration {iteration_id}..."):
+                            try:
+                                payloads, api_results = extract_from_squash_api(iteration_id, st.session_state.mode)
+                                if not payloads:
+                                    st.warning("⚠️ No failed executions found for this iteration.")
+                                    st.session_state.analysis_results = None
+                                    st.session_state.processing_results = []
+                                else:
+                                    st.session_state.analysis_results = api_results
+                                    st.session_state.processing_results = []
+                                st.rerun()
+                            except httpx.HTTPStatusError as exc:
+                                status = exc.response.status_code if exc.response is not None else "unknown"
+                                st.error(f"❌ Squash API request failed (HTTP {status}).")
+                            except Exception as exc:
+                                st.error(f"❌ API refresh failed: {exc}")
+                else:
+                    st.session_state.json_data = None
+                    st.session_state.input_source = None
+                    st.session_state.analysis_results = None
+                    st.session_state.processing_results = []
+                    st.rerun()
 
 # ─── Processing Results Section ───────────────────────────────────────────────
 if st.session_state.processing_results:

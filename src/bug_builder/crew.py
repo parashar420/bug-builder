@@ -1,4 +1,5 @@
 import os
+import ssl
 from dotenv import load_dotenv
 from crewai import Agent, Crew, Process, Task, LLM
 from crewai.project import CrewBase, agent, crew, task
@@ -8,6 +9,18 @@ from bug_builder import app_config, athena_token
 config = app_config
 
 load_dotenv()
+
+# Temporary workaround for corporate TLS interception.
+# Insecure: disable once proper CA trust is configured.
+def _insecure_ssl_context(*args, **kwargs):
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    return context
+
+
+ssl.create_default_context = _insecure_ssl_context
+ssl._create_default_https_context = ssl._create_unverified_context
 
 @CrewBase
 class BugBuilder():

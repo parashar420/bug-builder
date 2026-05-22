@@ -31,6 +31,8 @@ llm:
   base_url: "https://athena.webmdhelios.com/v1"
   model: "saas-openai-gpt-4.1"
 
+squash:
+  base_url: "https://squash.internetbrands.com/api/rest/latest"
 
 ports:
   mitm_proxy: 8080
