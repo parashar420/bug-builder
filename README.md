@@ -1,54 +1,128 @@
-# BugBuilder Crew
+# Bug Builder
 
-Welcome to the BugBuilder Crew project, powered by [crewAI](https://crewai.com). This template is designed to help you set up a multi-agent AI system with ease, leveraging the powerful and flexible framework provided by crewAI. Our goal is to enable your agents to collaborate effectively on complex tasks, maximizing their collective intelligence and capabilities.
+## Project Overview
 
-## Installation
+Bug Builder is a QA productivity tool that helps teams convert failed test runs into clear, actionable bug tickets in minutes instead of hours. Today, QA engineers often lose time jumping between test tools, copying step details manually, rewriting failure notes into a ticket format, and making sure the report includes enough context for developers to reproduce the issue. This project removes that repetitive work. It gathers failure details, organizes them into a readable bug narrative, and prepares a ready-to-use YouTrack ticket link so teams can file faster with better quality. It is designed to reduce common pain points: inconsistent bug report quality across testers, missing repro context, duplicated manual effort. Bug Builder also helps standardize communication between QA and engineering by producing a predictable structure for every report, which makes debugging and prioritization easier. In practical terms, the project gives teams a faster path from “test failed” to “ticket ready,” improves confidence that important details were not missed, and lowers onboarding friction for new QA members who need a guided, repeatable bug-reporting workflow.
 
-Ensure you have Python >=3.10 <3.14 installed on your system. This project uses [UV](https://docs.astral.sh/uv/) for dependency management and package handling, offering a seamless setup and execution experience.
+## What This Project Does
 
-First, if you haven't already, install uv:
+- Pulls failed test executions directly from Squash TM REST API.
+- Converts Squash execution payloads into the internal format already used by current bug-generation logic.
+- Uses CrewAI agents to create:
+  - A structured markdown bug report.
+  - A prefilled YouTrack issue creation URL.
+- Supports two workflows:
+  - Gherkin: one output per failed step.
+  - Testcases: one consolidated output per failed execution.
+
+## Current Architecture
+
+- UI: streamlit_app.py
+- API client: src/bug_builder/squash_client.py
+- API extraction and normalization: src/bug_builder/squash_extractor.py
+- API models: src/bug_builder/squash_models.py
+- Crew and prompts:
+  - src/bug_builder/crew.py
+  - src/bug_builder/config/agents.yaml
+  - src/bug_builder/config/tasks.yaml
+
+Notes:
+- Legacy MITM capture code remains in the repo (squash_capture.py) but is hidden from the UI.
+- YouTrack integration is URL-based (no YouTrack REST API calls).
+
+## Prerequisites
+
+- Python >=3.10,<3.14
+- Install dependencies from pyproject.toml
+- Valid Athena key for CrewAI LLM calls
+- Valid Squash API token (Bearer)
+
+## Setup
+
+1. Create or activate your virtual environment.
+2. Install dependencies:
 
 ```bash
-pip install uv
+pip install -e .
 ```
 
-Next, navigate to your project directory and install the dependencies:
+3. Add required tokens:
 
-(Optional) Lock the dependencies and install them by using the CLI command:
-```bash
-crewai install
-```
-### Customizing
+- athena_token.txt (already supported)
+- squash_token.txt (new, ignored by git)
 
-**Add your `OPENAI_API_KEY` into the `.env` file**
+You can start from examples:
 
-- Modify `src/bug_builder/config/agents.yaml` to define your agents
-- Modify `src/bug_builder/config/tasks.yaml` to define your tasks
-- Modify `src/bug_builder/crew.py` to add your own logic, tools and specific args
-- Modify `src/bug_builder/main.py` to add custom inputs for your agents and tasks
+- athena_token.txt.example
+- squash_token.txt.example
 
-## Running the Project
+4. Ensure config.yaml contains:
 
-To kickstart your crew of AI agents and begin task execution, run this from the root folder of your project:
+- squash.base_url (default: https://squash.internetbrands.com/api/rest/latest)
+- Existing youtrack and llm blocks
+
+## Running the App
 
 ```bash
-$ crewai run
+streamlit run streamlit_app.py
 ```
 
-This command initializes the bug_builder Crew, assembling the agents and assigning them tasks as defined in your configuration.
+In the UI:
 
-This example, unmodified, will run the create a `report.md` file with the output of a research on LLMs in the root folder.
+1. Choose mode: Gherkin or Testcases.
+2. Enter Squash iteration ID.
+3. Click Extract from Squash API.
+4. Review analysis results.
+5. Click Create YouTrack Links to generate output URLs.
 
-## Understanding Your Crew
+## How Mode Toggle Works
 
-The bug_builder Crew is composed of multiple AI agents, each with unique roles, goals, and tools. These agents collaborate on a series of tasks, defined in `config/tasks.yaml`, leveraging their collective skills to achieve complex objectives. The `config/agents.yaml` file outlines the capabilities and configurations of each agent in your crew.
+- Gherkin:
+  - Processes failures at failed-step granularity.
+  - Can generate multiple tickets from a single execution.
+- Testcases:
+  - Processes failures at execution/testcase granularity.
+  - Generates one consolidated ticket per failed execution.
 
-## Support
+## Output Files
 
-For support, questions, or feedback regarding the BugBuilder Crew or crewAI.
-- Visit our [documentation](https://docs.crewai.com)
-- Reach out to us through our [GitHub repository](https://github.com/joaomdmoura/crewai)
-- [Join our Discord](https://discord.com/invite/X4JWnZnxPb)
-- [Chat with our docs](https://chatg.pt/DWjSBZn)
+During processing, Crew tasks may create temporary files in project root:
 
-Let's create wonders together with the power and simplicity of crewAI.
+- bug_report.md
+- youtrack_url.txt
+
+The app reads them and then manages output display in Streamlit.
+
+## Security and Secrets
+
+Never commit real secrets. This repository ignores:
+
+- athena_token.txt
+- squash_token.txt
+- .env
+
+Use the corresponding example files for onboarding.
+
+## Verification Checklist
+
+For a known iteration (example: 17706), verify:
+
+- Failed executions are detected.
+- Execution steps are loaded from /executions/{id}/execution-steps?size=200.
+- Generated bug descriptions include expected failure context.
+- YouTrack links open with populated title and description.
+
+## Troubleshooting
+
+- 401 from Squash API:
+  - Confirm Authorization: Bearer <token> behavior and token validity.
+- No failures found:
+  - Confirm iteration ID and that failed test-plan items exist.
+- Missing build/device info:
+  - App falls back from execution comment to iteration description when available.
+
+## Maintenance Notes
+
+- API-first flow is active.
+- Legacy MITM code is retained for fallback but hidden from UI.
+- Keep prompt and agent quality in agents.yaml and tasks.yaml aligned with QA reporting standards.

@@ -45,5 +45,36 @@ def load_athena_token():
     return None
 
 
+def load_squash_token():
+    """
+    Read Squash API token from squash_token.txt (gitignored).
+    """
+    # Find project root
+    project_root = os.path.dirname(os.path.abspath(__file__))
+    while not os.path.exists(os.path.join(project_root, "config.yaml")):
+        project_root = os.path.dirname(project_root)
+
+    token_path = os.path.join(project_root, "squash_token.txt")
+
+    if os.path.exists(token_path):
+        with open(token_path, "r") as f:
+            token = f.read().strip()
+        if token and token != "PASTE_YOUR_SQUASH_API_KEY_HERE":
+            print("🔑 Squash API token loaded from squash_token.txt")
+            return token
+
+    # Fallback: environment variable
+    token = os.getenv("SQUASH_API_KEY")
+    if token:
+        print("🔑 Squash API token loaded from environment variable")
+        return token
+
+    print("⚠️  Warning: Squash API token not found.")
+    print("   Option 1 (recommended): Paste your token in squash_token.txt")
+    print("   Option 2 (fallback): Set SQUASH_API_KEY in your .env file")
+    return None
+
+
 app_config = load_config()
 athena_token = load_athena_token()
+squash_token = load_squash_token()
